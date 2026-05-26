@@ -1,7 +1,7 @@
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DXDATA_URL =
-  "https://raw.githubusercontent.com/gekichumai/dxrating/main/packages/dxdata/dxdata.json";
+  "https://cdn.jsdelivr.net/gh/gekichumai/dxrating@main/packages/dxdata/dxdata.json";
 const JACKET_CDN = "https://shama.dxrating.net/images/cover/v2";
 const SEGA_URL = "https://maimai.sega.jp/data/maimai_songs.json";
 
@@ -542,7 +542,7 @@ function processScores(cache) {
       const internalLv = override?.ilv ?? (lvMatch ? lvMatch.value : parseLevel(value));
 
       const verMatch = lookupChart(songVersions, rawTitleLower, cleanTitleLower, alias, typeHint);
-      const version = override?.version || (verMatch ? verMatch.value : "");
+      const version = override?.version || (verMatch ? verMatch.value : "") || "maimai";
 
       // Determine chart type: from [DX]/[ST] prefix, matched sheet type, or version era
       let chartType = "";
