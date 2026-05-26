@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AstroDX Rating Viewer</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+</head>
+<body>
+  <header>
+    <button id="theme-toggle" aria-label="Toggle theme" title="Toggle color theme">
+      <svg id="sun-icon" class="theme-btn-icon hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      <svg id="moon-icon" class="theme-btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+    </button>
+    <h1>AstroDX Rating Viewer</h1>
+    <p id="status">Loading chart data...</p>
+  </header>
+
+  <section id="upload-section">
+    <label id="upload-area">
+      <input type="file" id="file-input" accept="*">
+      <div class="upload-icon-decor">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      </div>
+      <div class="upload-title">Import AstroDX Cache</div>
+      <div class="upload-hint">Drop your <code>cache</code> file here, or click to browse</div>
+    </label>
+  </section>
+
+  <!-- Tab bar -->
+  <nav id="tab-bar" class="hidden">
+    <button class="tab active" data-tab="all">All Scores</button>
+    <button class="tab" data-tab="b50">Best 50</button>
+    <button class="tab" data-tab="stats">Statistics</button>
+  </nav>
+
+  <!-- All Scores tab -->
+  <div id="tab-all">
+    <section id="controls" class="hidden">
+      <input type="text" id="search" placeholder="Search by title...">
+      <div id="diff-filters">
+        <label><input type="checkbox" value="Basic" checked> <span class="diff-basic">Basic</span></label>
+        <label><input type="checkbox" value="Advanced" checked> <span class="diff-advanced">Advanced</span></label>
+        <label><input type="checkbox" value="Expert" checked> <span class="diff-expert">Expert</span></label>
+        <label><input type="checkbox" value="Master" checked> <span class="diff-master">Master</span></label>
+        <label><input type="checkbox" value="Re:Master" checked> <span class="diff-remaster">Re:Master</span></label>
+      </div>
+      <div id="level-filter">
+        <span class="lf-label">Level:</span>
+        <span class="level-mode-toggle">
+          <button type="button" data-mode="visible" class="active">Visible</button>
+          <button type="button" data-mode="constant">Constant</button>
+        </span>
+        <span class="level-inputs visible-inputs">
+          <select id="level-min-visible"></select>
+          <span class="lf-dash">–</span>
+          <select id="level-max-visible"></select>
+        </span>
+        <span class="level-inputs constant-inputs hidden">
+          <input type="number" id="level-min-constant" min="1.0" max="15.0" step="0.1" value="1.0">
+          <span class="lf-dash">–</span>
+          <input type="number" id="level-max-constant" min="1.0" max="15.0" step="0.1" value="15.0">
+        </span>
+        <button type="button" id="level-snap" title="Expand the current range to align with visible-level boundaries">Snap to visible</button>
+      </div>
+    </section>
+
+    <section id="table-section" class="hidden">
+      <div id="table-wrapper">
+        <table id="score-table" class="score-table">
+          <thead>
+            <tr>
+              <th data-col="#">#</th>
+              <th data-col="chartType">Type</th>
+              <th data-col="version">Ver</th>
+              <th data-col="genre">Genre</th>
+              <th data-col="playcount">Plays</th>
+              <th data-col="name">Name</th>
+              <th data-col="level">Lv</th>
+              <th data-col="clear">Clear</th>
+              <th data-col="accuracy">Acc%</th>
+              <th data-col="rank">Rank</th>
+              <th data-col="rating" class="sorted desc">Rating</th>
+              <th data-col="dxStars">DX</th>
+              <th data-col="rating_s">if S</th>
+              <th data-col="rating_sp">if S+</th>
+              <th data-col="rating_ss">if SS</th>
+              <th data-col="rating_ssp">if SS+</th>
+              <th data-col="rating_sss">if SSS</th>
+              <th data-col="rating_sssp">if SSS+</th>
+            </tr>
+          </thead>
+          <tbody id="score-body"></tbody>
+        </table>
+      </div>
+      <p id="table-info"></p>
+    </section>
+  </div>
+
+  <!-- Best 50 tab -->
+  <div id="tab-b50" class="hidden">
+    <section id="b50-settings">
+      <div id="b50-version-config">
+        <label id="b50-ignore-label" class="hidden">
+          <input type="checkbox" id="b50-ignore-newer"> Ignore charts newer than selected versions
+        </label>
+        <label>Display:
+          <select id="b50-display-mode">
+            <option value="separate" selected>Separate (NEW / OLD)</option>
+            <option value="combined">Combined</option>
+          </select>
+        </label>
+      </div>
+      <div id="b50-new-versions" class="hidden">
+        <span class="bv-label">New chart versions:</span>
+        <div id="b50-version-checks"></div>
+        <button id="b50-versions-latest" type="button" title="Reset to the 2 newest versions">Latest 2</button>
+        <button id="b50-versions-clear" type="button" title="Uncheck all">Clear</button>
+      </div>
+      <button id="b50-export" type="button">Export Board as Image</button>
+      <span id="b50-exclude-info" class="hidden"></span>
+    </section>
+
+    <div id="b50-capture">
+    <div id="b50-header">
+      <div class="b50-header-stats">
+        <div class="b50-header-block">
+          <span class="b50-header-label old">OLD 35</span>
+          <span class="b50-header-value" id="b50-old-sum">0</span>
+          <span class="b50-header-avg">avg <span id="b50-old-avg">0</span></span>
+        </div>
+        <div class="b50-header-block">
+          <span class="b50-header-label new">NEW 15</span>
+          <span class="b50-header-value" id="b50-new-sum">0</span>
+          <span class="b50-header-avg">avg <span id="b50-new-avg">0</span></span>
+        </div>
+      </div>
+      <div class="b50-header-total">
+        <span class="b50-header-total-label">TOTAL</span>
+        <span class="b50-header-total-value" id="b50-total">0</span>
+        <span class="b50-header-avg">avg <span id="b50-total-avg">0</span></span>
+      </div>
+    </div>
+
+    <section id="b50-top-plays"></section>
+
+    <div id="b50-footer">Generated with AstroDX Rating Viewer</div>
+    </div>
+
+    <section id="b50-table-section">
+      <div id="b50-table-wrapper">
+        <table id="b50-table" class="score-table">
+          <thead>
+            <tr>
+              <th class="b50-exclude-col"></th>
+              <th>#</th>
+              <th>Pool</th>
+              <th>Type</th>
+              <th>Ver</th>
+              <th>Genre</th>
+              <th>Plays</th>
+              <th>Name</th>
+              <th>Lv</th>
+              <th>Clear</th>
+              <th>Acc%</th>
+              <th>Rank</th>
+              <th>Rating</th>
+              <th>DX</th>
+              <th class="col-if">if S</th>
+              <th class="col-if">if S+</th>
+              <th class="col-if">if SS</th>
+              <th class="col-if">if SS+</th>
+              <th class="col-if">if SSS</th>
+              <th class="col-if">if SSS+</th>
+            </tr>
+          </thead>
+          <tbody id="b50-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- Statistics tab -->
+  <div id="tab-stats" class="hidden">
+    <div id="stats-container"></div>
+  </div>
+
+  <!-- Export Modal Fallback -->
+  <div id="export-modal" class="hidden">
+    <div class="modal-overlay" id="modal-overlay-btn"></div>
+    <div class="modal-content">
+      <button id="modal-close" aria-label="Close modal">&times;</button>
+      <div class="modal-header">
+        <h2>Your Best 50 Board is Ready!</h2>
+        <p>Right-click the board below and select <strong>"Save image as..."</strong> to save it.</p>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
