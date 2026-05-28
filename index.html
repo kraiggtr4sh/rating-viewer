@@ -17,30 +17,168 @@
     <p id="status">Loading chart data...</p>
   </header>
 
-  <section id="upload-section">
-    <label id="upload-area">
-      <input type="file" id="file-input" accept="*">
-      <div class="upload-icon-decor">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="17 8 12 3 7 8"/>
-          <line x1="12" y1="3" x2="12" y2="15"/>
-        </svg>
-      </div>
-      <div class="upload-title">Import AstroDX Cache</div>
-      <div class="upload-hint">Drop your <code>cache</code> file here, or click to browse</div>
-    </label>
-  </section>
-
   <!-- Tab bar -->
-  <nav id="tab-bar" class="hidden">
-    <button class="tab active" data-tab="all">All Scores</button>
-    <button class="tab" data-tab="b50">Best 50</button>
-    <button class="tab" data-tab="stats">Statistics</button>
+  <nav id="tab-bar">
+    <button class="tab active" data-tab="lookup">Constant Search</button>
+    <button class="tab" data-tab="upload">Upload Cache</button>
+    <button class="tab disabled-tab" data-tab="all" disabled title="Upload cache to unlock">All Scores</button>
+    <button class="tab disabled-tab" data-tab="b50" disabled title="Upload cache to unlock">Best 50</button>
+    <button class="tab disabled-tab" data-tab="stats" disabled title="Upload cache to unlock">Statistics</button>
   </nav>
 
+  <!-- Constant Lookup tab -->
+  <div id="tab-lookup">
+    <section id="lookup-section">
+      <div class="lookup-search-grid">
+        <!-- Cột Trái (Left Column) -->
+        <div class="lookup-filter-col">
+          <div class="lookup-filter-item">
+            <span class="l-filter-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Category</span>
+            <select id="lk-category"><option value="ALL">ALL</option></select>
+          </div>
+          <div class="lookup-filter-item">
+            <span class="l-filter-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg> Difficulty</span>
+            <select id="lk-diff">
+              <option value="ALL">ALL</option>
+              <option value="Basic">Basic</option>
+              <option value="Advanced">Advanced</option>
+              <option value="Expert">Expert</option>
+              <option value="Master">Master</option>
+              <option value="Re:Master">Re:Master</option>
+            </select>
+          </div>
+          <div class="lookup-filter-item">
+            <span class="l-filter-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Version</span>
+            <select id="lk-version"><option value="ALL">ALL</option></select>
+          </div>
+          <div class="lookup-filter-item">
+            <span class="l-filter-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg> Artist</span>
+            <input type="text" id="lk-artist" placeholder="ALL">
+          </div>
+        </div>
+        
+        <!-- Cột Phải (Right Column) -->
+        <div class="lookup-filter-col">
+          <div class="lookup-filter-item">
+            <span class="l-filter-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3M9 22h6M12 17v5M5 17h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2z"/></svg> Title</span>
+            <input type="text" id="lk-title" placeholder="ALL">
+          </div>
+          <div class="lookup-filter-item l-filter-range">
+            <div class="l-range-half">
+              <span class="l-filter-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Min. Level</span>
+              <select id="lk-min-level">
+                <option value="1">1.0</option>
+                <option value="2">2.0</option>
+                <option value="3">3.0</option>
+                <option value="4">4.0</option>
+                <option value="5">5.0</option>
+                <option value="6">6.0</option>
+                <option value="7">7.0</option>
+                <option value="8">8.0</option>
+                <option value="9">9.0</option>
+                <option value="10">10.0</option>
+                <option value="11">11.0</option>
+                <option value="12">12.0</option>
+                <option value="13">13.0</option>
+                <option value="14">14.0</option>
+                <option value="15">15.0</option>
+              </select>
+            </div>
+            <div class="l-range-half">
+              <span class="l-filter-label">Max. Level</span>
+              <select id="lk-max-level">
+                <option value="1">1.0</option>
+                <option value="2">2.0</option>
+                <option value="3">3.0</option>
+                <option value="4">4.0</option>
+                <option value="5">5.0</option>
+                <option value="6">6.0</option>
+                <option value="7">7.0</option>
+                <option value="8">8.0</option>
+                <option value="9">9.0</option>
+                <option value="10">10.0</option>
+                <option value="11">11.0</option>
+                <option value="12">12.0</option>
+                <option value="13">13.0</option>
+                <option value="14">14.0</option>
+                <option value="15" selected>15.0</option>
+              </select>
+            </div>
+          </div>
+          <div class="lookup-filter-item">
+            <span class="l-filter-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg> Type</span>
+            <select id="lk-type">
+              <option value="ALL">ALL</option>
+              <option value="DX">DX</option>
+              <option value="Standard">Standard</option>
+            </select>
+          </div>
+          <div class="lookup-filter-item">
+            <span class="l-filter-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Notes Designer</span>
+            <select id="lk-charter"><option value="ALL">ALL</option></select>
+          </div>
+        </div>
+      </div>
+      
+      <div class="lookup-bpm-bar">
+        <div class="lookup-filter-item l-filter-range-bpm">
+          <span class="l-filter-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Min. BPM</span>
+          <input type="number" id="lk-min-bpm" placeholder="50" min="1" max="999">
+          <span class="l-bpm-separator">–</span>
+          <span class="l-filter-label">Max. BPM</span>
+          <input type="number" id="lk-max-bpm" placeholder="350" min="1" max="999">
+        </div>
+      </div>
+      
+      <div class="lookup-layout">
+        <div class="lookup-results-panel">
+          <div class="panel-header-row">
+            <h3>Search Results</h3>
+            <span id="lookup-results-count" class="lookup-count-badge"></span>
+          </div>
+          <div id="lookup-results" class="lookup-songs-grid">
+            <p class="lookup-hint-text">Type a song name above to look up chart constants...</p>
+          </div>
+        </div>
+        
+        <div class="lookup-recent-panel">
+          <div class="lookup-recent-box">
+            <h3>Recent Played</h3>
+            <div id="lookup-recent-played" class="lookup-recent-list">
+              <p class="lookup-hint-text">No recently played songs recorded yet.</p>
+            </div>
+          </div>
+          <div class="lookup-recent-box">
+            <h3>Recent Checked</h3>
+            <div id="lookup-recent-checked" class="lookup-recent-list">
+              <p class="lookup-hint-text">No songs viewed recently.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Upload Cache Tab Wrapper -->
+  <div id="tab-upload" class="hidden">
+    <section id="upload-section">
+      <label id="upload-area">
+        <input type="file" id="file-input" accept="*">
+        <div class="upload-icon-decor">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="upload-title">Import AstroDX Cache</div>
+        <div class="upload-hint">Drop your <code>cache</code> file here, or click to browse</div>
+      </label>
+    </section>
+  </div>
+
   <!-- All Scores tab -->
-  <div id="tab-all">
+  <div id="tab-all" class="hidden">
     <section id="controls" class="hidden">
       <input type="text" id="search" placeholder="Search by title...">
       <div id="diff-filters">
@@ -200,6 +338,39 @@
         <p>Right-click the board below and select <strong>"Save image as..."</strong> to save it.</p>
       </div>
       <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Manual Score Entry Modal -->
+  <div id="manual-score-modal" class="hidden">
+    <div class="modal-overlay" id="manual-modal-overlay-btn"></div>
+    <div class="modal-content manual-modal-content">
+      <button id="manual-modal-close" aria-label="Close modal">&times;</button>
+      <div class="modal-header">
+        <h2>Record Recent Play</h2>
+        <p id="manual-song-title">Song Name</p>
+      </div>
+      <div class="modal-body-form">
+        <div class="form-group">
+          <label for="manual-diff">Difficulty / Chart:</label>
+          <select id="manual-diff"></select>
+        </div>
+        <div class="form-group">
+          <label for="manual-acc">Achievement Rate (%):</label>
+          <input type="number" id="manual-acc" min="0" max="101" step="0.0001" placeholder="e.g. 100.5000">
+        </div>
+        <div class="form-group">
+          <label for="manual-clear">Clear Type:</label>
+          <select id="manual-clear">
+            <option value="0">Normal Clear</option>
+            <option value="3">FC (Full Combo)</option>
+            <option value="4">FC+ (Full Combo+)</option>
+            <option value="5">AP (All Perfect)</option>
+            <option value="6">AP+ (All Perfect+)</option>
+          </select>
+        </div>
+        <button id="manual-submit-btn" class="modal-submit-btn">Save Play Record</button>
+      </div>
     </div>
   </div>
 

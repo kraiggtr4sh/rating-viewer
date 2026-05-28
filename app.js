@@ -115,10 +115,10 @@ function getRatingTier(rating) {
   return "normal";
 }
 
-// Tier for partial pools (OLD/NEW): extrapolate avg to a full B50 equivalent.
+// Tier for partial pools (OLD/NEW): use the sum value for correct tier color.
 function getPoolTier(sum, count) {
   if (!count) return "normal";
-  return getRatingTier((sum / count) * 50);
+  return getRatingTier(sum);
 }
 
 function ratingPlateHtml(value, tier, height, srcOverride) {
@@ -186,6 +186,10 @@ let chartConstants = {};
 let songCategories = {};
 let songVersions = {};
 let songImages = {}; // normalizedTitle → imageName (for jacket images)
+let firstRender = true;
+let allSongsList = [];
+let recentChecked = JSON.parse(localStorage.getItem("recentChecked") || "[]");
+let recentPlayed = JSON.parse(localStorage.getItem("recentPlayed") || "[]");
 
 // Song name aliases: cache title (normalized, lowercase) → dxdata title (normalized, lowercase)
 const songAliases = {
@@ -427,7 +431,8 @@ async function fetchChartData() {
     const res = await fetch(DXDATA_URL);
     const data = await res.json();
 
-    for (const song of data.songs || []) {
+    allSongsList = data.songs || [];
+    for (const song of allSongsList) {
       const title = normalizeTitle(song.title || "").toLowerCase();
       if (song.category) {
         songCategories[title] = song.category;
@@ -462,7 +467,7 @@ async function fetchChartData() {
       console.warn("Failed to load song aliases:", e);
     }
 
-    status.textContent = "Chart data loaded. Upload your cache file.";
+    status.textContent = "Chart data loaded. Ready for Lookup or Cache Import.";
   } catch (e) {
     console.warn("Failed to fetch chart data:", e);
     status.textContent = "Chart data unavailable (offline?). Upload your cache file — ratings will use display levels.";
@@ -481,6 +486,9 @@ async function fetchChartData() {
   } catch (_) {
     // CORS or network error — genre will use dxdata categories or be empty
   }
+
+  // Initialize offline lookup features
+  initLookupTab();
 }
 
 // ── Cache parsing ────────────────────────────────────────────────────────────
@@ -513,6 +521,12 @@ function processScores(cache) {
       || songImages[cleanTitleLower] || songImages[rawTitleLower]
       || (aliasTitle && songImages[aliasTitle])
       || "";
+
+    const dbSong = allSongsList.find(song => {
+      const t = (song.title || "").toLowerCase();
+      return t === cleanTitleLower || t === rawTitleLower || (aliasTitle && t === aliasTitle);
+    });
+    const searchAcronyms = dbSong ? dbSong.searchAcronyms || [] : [];
 
     for (const diff of meta.difficulties || []) {
       const stats = diff.stats || {};
@@ -576,6 +590,7 @@ function processScores(cache) {
         version,
         genre,
         imageName,
+        searchAcronyms,
         playcount: plays,
         difficulty: alias,
         level: internalLv,
@@ -704,6 +719,21 @@ function renderTable() {
   tbody.innerHTML = "";
   tbody.appendChild(fragment);
   info.textContent = `${filteredScores.length} scores`;
+
+  if (firstRender) {
+    tbody.classList.add("animate-rows");
+    const rows = tbody.querySelectorAll("tr");
+    const STAGGER_COUNT = Math.min(rows.length, 20);
+    for (let i = 0; i < STAGGER_COUNT; i++) {
+      rows[i].style.animationDelay = `${i * 0.02}s`;
+    }
+    // Remove after animation done
+    setTimeout(() => {
+      tbody.classList.remove("animate-rows");
+      rows.forEach(r => r.style.animationDelay = "");
+    }, STAGGER_COUNT * 20 + 300);
+    firstRender = false;
+  }
 }
 
 // Level filter state — defaults cover the full 1.0–15.0 range (no filter).
@@ -805,9 +835,17 @@ function applyFilters() {
   const minTol = levelMin - 0.0001;
   const maxTol = levelMax + 0.0001;
 
+  const qRomaji = toRomaji(query);
+
   filteredScores = allScores.filter(s => {
     if (!checkedDiffs.has(s.difficulty)) return false;
-    if (query && !s.name.toLowerCase().includes(query)) return false;
+    if (query) {
+      const nameRomaji = toRomaji(s.name.toLowerCase());
+      const acronymMatch = (s.searchAcronyms || []).some(acr => 
+        (acr || "").toLowerCase().includes(query)
+      );
+      if (!nameRomaji.includes(qRomaji) && !acronymMatch) return false;
+    }
     if (s.level < minTol || s.level > maxTol) return false;
     return true;
   });
@@ -919,6 +957,29 @@ function computeBest50() {
   return { newScores, oldScores };
 }
 
+function animateRatingPlate(elementId, targetValue) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const plateValue = el.querySelector(".rating-plate-value");
+  if (!plateValue) return;
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    plateValue.textContent = targetValue;
+    return;
+  }
+
+  const duration = 400;
+  const start = performance.now();
+
+  function tick(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+    plateValue.textContent = Math.round(eased * targetValue);
+    if (progress < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
 function renderB50() {
   const { newScores, oldScores } = computeBest50();
 
@@ -928,9 +989,14 @@ function renderB50() {
 
   const totalCount = newScores.length + oldScores.length;
   const PLATE_H_LIVE = 44;
-  document.getElementById("b50-old-sum").innerHTML = ratingPlateHtml(oldSum, getPoolTier(oldSum, oldScores.length), PLATE_H_LIVE);
-  document.getElementById("b50-new-sum").innerHTML = ratingPlateHtml(newSum, getPoolTier(newSum, newScores.length), PLATE_H_LIVE);
-  document.getElementById("b50-total").innerHTML  = ratingPlateHtml(total,  getRatingTier(total),                     PLATE_H_LIVE);
+  document.getElementById("b50-old-sum").innerHTML = ratingPlateHtml(0, getPoolTier(oldSum, oldScores.length), PLATE_H_LIVE);
+  document.getElementById("b50-new-sum").innerHTML = ratingPlateHtml(0, getPoolTier(newSum, newScores.length), PLATE_H_LIVE);
+  document.getElementById("b50-total").innerHTML  = ratingPlateHtml(0,  getRatingTier(total),                     PLATE_H_LIVE);
+
+  animateRatingPlate("b50-old-sum", oldSum);
+  animateRatingPlate("b50-new-sum", newSum);
+  animateRatingPlate("b50-total", total);
+
   document.getElementById("b50-new-avg").textContent = newScores.length ? (newSum / newScores.length).toFixed(1) : "0";
   document.getElementById("b50-old-avg").textContent = oldScores.length ? (oldSum / oldScores.length).toFixed(1) : "0";
   document.getElementById("b50-total-avg").textContent = totalCount ? (total / totalCount).toFixed(1) : "0";
@@ -1131,6 +1197,11 @@ function renderB50TopPlays(newScores, oldScores) {
         <div class="tp-card-grid tp-grid-3">${newCards}</div>
       </div>
     </div>`;
+
+  const cards = container.querySelectorAll(".tp-card");
+  cards.forEach((card, i) => {
+    card.style.animationDelay = `${i * 0.025}s`;
+  });
 
 }
 
@@ -1471,10 +1542,16 @@ async function exportB50Image() {
 }
 
 function switchTab(tab) {
+  const tabButton = document.querySelector(`.tab[data-tab="${tab}"]`);
+  if (tabButton && tabButton.disabled) return;
+
   activeTab = tab;
   document.querySelectorAll(".tab").forEach(t => {
     t.classList.toggle("active", t.dataset.tab === tab);
   });
+  
+  document.getElementById("tab-lookup").classList.toggle("hidden", tab !== "lookup");
+  document.getElementById("tab-upload").classList.toggle("hidden", tab !== "upload");
   document.getElementById("tab-all").classList.toggle("hidden", tab !== "all");
   document.getElementById("tab-b50").classList.toggle("hidden", tab !== "b50");
   document.getElementById("tab-stats").classList.toggle("hidden", tab !== "stats");
@@ -1585,8 +1662,13 @@ function handleFile(file) {
       allScores = processScores(cache);
       filteredScores = [...allScores];
 
-      document.getElementById("upload-section").classList.add("hidden");
-      document.getElementById("tab-bar").classList.remove("hidden");
+      // Unlock all tabs
+      document.querySelectorAll(".tab.disabled-tab").forEach(t => {
+        t.disabled = false;
+        t.classList.remove("disabled-tab");
+        t.removeAttribute("title");
+      });
+
       document.getElementById("controls").classList.remove("hidden");
       document.getElementById("table-section").classList.remove("hidden");
       document.getElementById("b50-ignore-label").classList.remove("hidden");
@@ -1598,6 +1680,9 @@ function handleFile(file) {
       sortAsc = false;
       renderTable();
 
+      // Auto switch to Best 50 tab
+      switchTab("b50");
+
       status.textContent = `Loaded ${allScores.length} scores.`;
     } catch (err) {
       console.error(err);
@@ -1607,7 +1692,491 @@ function handleFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
+// ── Offline Constant Lookup & Play Tracker ───────────────────────────────────
+
+const KANA_MAP = {
+  'あ':'a','い':'i','う':'u','え':'e','お':'o',
+  'か':'ka','き':'ki','く':'ku','け':'ke','こ':'ko',
+  'さ':'sa','し':'shi','す':'su','せ':'se','そ':'so',
+  'ta':'ta','ち':'chi','つ':'tsu','て':'te','と':'to',
+  'な':'na','に':'ni','ぬ':'nu','ね':'ne','の':'no',
+  'は':'ha','ひ':'hi','ふ':'fu','へ':'he','ほ':'ho',
+  'ま':'ma','mi':'mi','む':'mu','め':'me','も':'mo',
+  'や':'ya','ゆ':'yu','よ':'yo',
+  'ら':'ra','り':'ri','る':'ru','れ':'re','ろ':'ro',
+  'わ':'wa','を':'wo','ん':'n',
+  'が':'ga','ぎ':'gi','ぐ':'gu','げ':'ge','ご':'go',
+  'ざ':'za','じ':'ji','ず':'zu','ぜ':'ze','ぞ':'zo',
+  'だ':'da','ぢ':'ji','づ':'zu','đ':'de','ど':'do',
+  'ば':'ba','び':'bi','ぶ':'bu','べ':'be','ぼ':'bo',
+  'ぱ':'pa','ぴ':'pi','ぷ':'pu','ぺ':'pe','ぽ':'po',
+  'ア':'a','イ':'i','ウ':'u','エ':'e','オ':'o',
+  'カ':'ka','キ':'ki','ク':'ku','ケ':'ke','コ':'ko',
+  'サ':'sa','シ':'shi','ス':'su','セ':'se','ソ':'so',
+  'タ':'ta','チ':'chi','ツ':'tsu','テ':'te','ト':'to',
+  'ナ':'na','ニ':'ni','ヌ':'nu','ネ':'ne','ノ':'no',
+  'ハ':'ha','ヒ':'hi','フ':'fu','ヘ':'he','ホ':'ho',
+  'マ':'ma','ミ':'mi','ム':'mu','メ':'me','モ':'mo',
+  'ヤ':'ya','ユ':'yu','ヨ':'yo',
+  'ラ':'ra','リ':'ri','る':'ru','レ':'re','ロ':'ro',
+  'ワ':'wa','ヲ':'wo','ン':'n',
+  'ガ':'ga','ギ':'gi','グ':'gu','ゲ':'ge','ゴ':'go',
+  'ザ':'za','ジ':'ji','ズ':'zu','ゼ':'ze','ゾ':'zo',
+  'ダ':'da','ヂ':'ji','ヅ':'zu','デ':'de','ド':'do',
+  'バ':'ba','ビ':'bi','ブ':'bu','ベ':'be','ボ':'bo',
+  'パ':'pa','pi':'pi','プ':'pu','ペ':'pe','ポ':'po',
+  'ぁ':'a','ぃ':'i','ぅ':'u','ぇ':'e','ぉ':'o',
+  'ァ':'a','ィ':'i','ゥ':'u','ェ':'e','ォ':'o',
+  'っ':'tsu','ッ':'tsu','ゃ':'ya','ゅ':'yu','ょ':'yo',
+  'ャ':'ya','ュ':'yu','ョ':'yo','ゎ':'wa','ヮ':'wa',
+  'ー':''
+};
+
+const KANA_COMBINATIONS = {
+  'きゃ':'kya','きゅ':'kyu','きょ':'kyo',
+  'しゃ':'sha','しゅ':'shu','しょ':'sho',
+  'ちゃ':'cha','ちゅ':'chu','ちょ':'cho',
+  'にゃ':'nya','にゅ':'nyu','にょ':'nyo',
+  'ひゃ':'hya','ひゅ':'hyu','ひょ':'hyo',
+  'みゃ':'mya','みゅ':'myu','みょ':'myo',
+  'りゃ':'rya','りゅ':'ryu','りょ':'ryo',
+  'ぎゃ':'gya','ぎゅ':'gyu','giょ':'gyo',
+  'じゃ':'ja','じゅ':'ju','じょ':'jo',
+  'びゃ':'bya','びゅ':'byu','びょ':'byo',
+  'ぴゃ':'pya','ぴゅ':'pyu','ぴょ':'pyo',
+  'キャ':'kya','キュ':'kyu','キョ':'kyo',
+  'シャ':'sha','シュ':'shu','ショ':'sho',
+  'チャ':'cha','チュ':'chu','チョ':'cho',
+  'ニャ':'nya','ニュ':'nyu','ニョ':'nyo',
+  'ヒャ':'hya','ヒュ':'hyu','ヒョ':'hyo',
+  'ミャ':'mya','ミュ':'myu','ミョ':'myo',
+  'リャ':'rya','リュ':'ryu','リョ':'ryo',
+  'ギャ':'gya','ギュ':'gyu','ギョ':'gyo',
+  'ジャ':'ja','ジュ':'ju','ジョ':'jo',
+  'ビャ':'bya','ビュ':'byu','ビョ':'byo',
+  'ピャ':'pya','ピュ':'pyu','ピョ':'pyo',
+  'ティ':'ti','ディ':'di','デュ':'du',
+  'ファ':'fa','フィ':'fi','フェ':'fe','フォ':'fo',
+  'ウィ':'wi','ウェ':'we','ウォ':'wo',
+  'ヴァ':'va','ヴィ':'vi','ヴェ':'ve','ヴォ':'vo'
+};
+
+function toRomaji(str) {
+  if (!str) return "";
+  let result = "";
+  let i = 0;
+  while (i < str.length) {
+    const char = str[i];
+    const nextChar = str[i + 1] || "";
+    const combo = char + nextChar;
+
+    if (KANA_COMBINATIONS[combo]) {
+      result += KANA_COMBINATIONS[combo];
+      i += 2;
+    } else if (char === "っ" || char === "ッ") {
+      if (nextChar) {
+        let nextRomaji = "";
+        const nextCombo = nextChar + (str[i + 2] || "");
+        if (KANA_COMBINATIONS[nextCombo]) {
+          nextRomaji = KANA_COMBINATIONS[nextCombo];
+        } else if (KANA_MAP[nextChar]) {
+          nextRomaji = KANA_MAP[nextChar];
+        }
+        if (nextRomaji && !["a","i","u","e","o","n"].includes(nextRomaji[0])) {
+          result += nextRomaji[0];
+        }
+      }
+      i += 1;
+    } else if (KANA_MAP[char]) {
+      result += KANA_MAP[char];
+      i += 1;
+    } else {
+      result += char;
+      i += 1;
+    }
+  }
+  return result.toLowerCase();
+}
+
+let currentManualSong = null;
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+function initLookupTab() {
+  const filterIds = [
+    "lk-category", "lk-diff", "lk-version", "lk-artist", 
+    "lk-title", "lk-min-level", "lk-max-level", "lk-type", 
+    "lk-charter", "lk-min-bpm", "lk-max-bpm"
+  ];
+
+  filterIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const eventType = el.tagName === "INPUT" ? "input" : "change";
+    el.addEventListener(eventType, applyLookupFilters);
+  });
+
+  // Modal events
+  const closeBtn = document.getElementById("manual-modal-close");
+  const overlayBtn = document.getElementById("manual-modal-overlay-btn");
+  const modal = document.getElementById("manual-score-modal");
+  
+  function closeManualModal() {
+    modal.classList.add("hidden");
+    currentManualSong = null;
+  }
+  
+  if (closeBtn) closeBtn.addEventListener("click", closeManualModal);
+  if (overlayBtn) overlayBtn.addEventListener("click", closeManualModal);
+
+  const submitBtn = document.getElementById("manual-submit-btn");
+  if (submitBtn) {
+    submitBtn.addEventListener("click", saveManualPlayRecord);
+  }
+
+  // Populate dynamic dropdown options from the songs database
+  populateLookupFilters();
+
+  // Initial render of lists
+  renderRecentChecked();
+  renderRecentPlayed();
+  
+  // Initial results render (show some defaults or ALL if no query)
+  applyLookupFilters();
+}
+
+function populateLookupFilters() {
+  const categorySelect = document.getElementById("lk-category");
+  const versionSelect = document.getElementById("lk-version");
+  const charterSelect = document.getElementById("lk-charter");
+
+  if (!categorySelect || !versionSelect || !charterSelect) return;
+
+  const categories = new Set();
+  const versions = new Set();
+  const charters = new Set();
+
+  for (const song of allSongsList) {
+    if (song.category) categories.add(song.category);
+    for (const sheet of song.sheets || []) {
+      if (sheet.version) versions.add(sheet.version);
+      if (sheet.charter) charters.add(sheet.charter);
+    }
+  }
+
+  // Populate Categories
+  categorySelect.innerHTML = `<option value="ALL">ALL</option>`;
+  Array.from(categories).sort().forEach(cat => {
+    categorySelect.add(new Option(cat, cat));
+  });
+
+  // Populate Versions
+  versionSelect.innerHTML = `<option value="ALL">ALL</option>`;
+  Array.from(versions).sort((a, b) => getVersionRank(b) - getVersionRank(a)).forEach(ver => {
+    versionSelect.add(new Option(ver, ver));
+  });
+
+  // Populate Charters
+  charterSelect.innerHTML = `<option value="ALL">ALL</option>`;
+  Array.from(charters).sort().forEach(charter => {
+    charterSelect.add(new Option(charter, charter));
+  });
+}
+
+function applyLookupFilters() {
+  const resultsContainer = document.getElementById("lookup-results");
+  const countBadge = document.getElementById("lookup-results-count");
+  if (!resultsContainer) return;
+
+  const category = document.getElementById("lk-category").value;
+  const diff = document.getElementById("lk-diff").value;
+  const version = document.getElementById("lk-version").value;
+  const artist = document.getElementById("lk-artist").value.trim().toLowerCase();
+  const title = document.getElementById("lk-title").value.trim().toLowerCase();
+  const minLvl = parseFloat(document.getElementById("lk-min-level").value);
+  const maxLvl = parseFloat(document.getElementById("lk-max-level").value);
+  const type = document.getElementById("lk-type").value;
+  const charter = document.getElementById("lk-charter").value;
+  const minBpm = parseInt(document.getElementById("lk-min-bpm").value, 10);
+  const maxBpm = parseInt(document.getElementById("lk-max-bpm").value, 10);
+
+  const titleRomaji = toRomaji(title);
+  const artistRomaji = toRomaji(artist);
+
+  // If no filters are active at all, show hint to avoid massive dom rendering
+  const filtersActive = category !== "ALL" || diff !== "ALL" || version !== "ALL" || 
+                        artist || title || minLvl > 1.0 || maxLvl < 15.0 || 
+                        type !== "ALL" || charter !== "ALL" || !isNaN(minBpm) || !isNaN(maxBpm);
+
+  if (!filtersActive && allSongsList.length > 0) {
+    resultsContainer.innerHTML = `<p class="lookup-hint-text">Adjust any filters above to start searching & filtering constants...</p>`;
+    if (countBadge) countBadge.textContent = "0";
+    return;
+  }
+
+  const results = allSongsList.filter(song => {
+    // 1. Title match (Romaji & Acronyms)
+    if (title) {
+      const sTitleRomaji = toRomaji((song.title || "").toLowerCase());
+      const acronymMatch = (song.searchAcronyms || []).some(acr => 
+        (acr || "").toLowerCase().includes(title)
+      );
+      if (!sTitleRomaji.includes(titleRomaji) && !acronymMatch) return false;
+    }
+
+    // 2. Artist match (Romaji)
+    if (artist) {
+      const sArtistRomaji = toRomaji((song.artist || "").toLowerCase());
+      if (!sArtistRomaji.includes(artistRomaji)) return false;
+    }
+
+    // 3. Category match
+    if (category !== "ALL" && song.category !== category) return false;
+
+    // 4. BPM match
+    if (!isNaN(minBpm) && (song.bpm || 0) < minBpm) return false;
+    if (!isNaN(maxBpm) && (song.bpm || 0) > maxBpm) return false;
+
+    // 5. Sheet specific criteria
+    const hasMatchingSheet = (song.sheets || []).some(sheet => {
+      // Difficulty check
+      if (diff !== "ALL" && (sheet.difficulty || "").toLowerCase() !== diff.toLowerCase()) return false;
+
+      // Level check
+      const sheetLvl = sheet.internalLevelValue || parseLevel(sheet.level || "0");
+      if (sheetLvl < (minLvl - 0.0001) || sheetLvl > (maxLvl + 0.0001)) return false;
+
+      // Type check
+      if (type !== "ALL") {
+        const isDX = (sheet.type || "").toLowerCase() === "dx";
+        if (type === "DX" && !isDX) return false;
+        if (type === "Standard" && isDX) return false;
+      }
+
+      // Notes Designer (Charter) check
+      if (charter !== "ALL" && sheet.charter !== charter) return false;
+
+      // Version check
+      if (version !== "ALL" && sheet.version !== version) return false;
+
+      return true;
+    });
+
+    if (!hasMatchingSheet) return false;
+
+    return true;
+  });
+
+  const displayedResults = results.slice(0, 40);
+  if (countBadge) {
+    countBadge.textContent = results.length > 40 ? `40+ of ${results.length}` : `${results.length}`;
+  }
+
+  if (displayedResults.length === 0) {
+    resultsContainer.innerHTML = `<p class="lookup-hint-text">No songs matched your advanced search criteria.</p>`;
+    return;
+  }
+
+  let html = "";
+  for (const song of displayedResults) {
+    const artSrc = song.imageName ? jacketUrl(song.imageName) : "";
+    const artHtml = artSrc
+      ? `<img class="lookup-card-art" src="${artSrc}" loading="lazy" onerror="this.style.visibility='hidden'">`
+      : `<div class="lookup-card-art lookup-card-art-empty"></div>`;
+
+    const diffsOrder = ["basic", "advanced", "expert", "master", "remaster"];
+    const diffLabels = { basic: "BSC", advanced: "ADV", expert: "EXP", master: "MAS", remaster: "REM" };
+    const diffColors = { basic: "#22c55e", advanced: "#f59e0b", expert: "#ef4444", master: "#a855f7", remaster: "#ec4899" };
+
+    let sheetsHtml = `<div class="lookup-card-sheets">`;
+    const sheetsMap = {};
+    for (const sheet of song.sheets || []) {
+      const diffLower = (sheet.difficulty || "").toLowerCase();
+      sheetsMap[diffLower] = sheet;
+    }
+
+    for (const d of diffsOrder) {
+      const sheet = sheetsMap[d];
+      if (sheet) {
+        const lv = sheet.level || "";
+        const constant = sheet.internalLevelValue ? sheet.internalLevelValue.toFixed(1) : "?";
+        const label = diffLabels[d];
+        const color = diffColors[d];
+        const titleEsc = encodeURIComponent(song.title);
+        const diffEsc = encodeURIComponent(sheet.difficulty);
+        const imageEsc = encodeURIComponent(song.imageName || "");
+        sheetsHtml += `
+          <div class="lookup-diff-badge" style="border-color: ${color};" onclick="event.stopPropagation(); triggerPlayModal('${titleEsc}', '${diffEsc}', ${sheet.internalLevelValue || 0}, '${imageEsc}')">
+            <span class="l-diff-name" style="background: ${color};">${label}</span>
+            <span class="l-diff-val">${constant} <span class="l-diff-lv">(${lv})</span></span>
+          </div>`;
+      }
+    }
+    sheetsHtml += `</div>`;
+
+    const songTitleEsc = encodeURIComponent(song.title);
+    const songImageEsc = encodeURIComponent(song.imageName || "");
+    html += `
+      <div class="lookup-card" onclick="addToRecentChecked('${songTitleEsc}', '${songImageEsc}')">
+        <div class="lookup-card-top">
+          ${artHtml}
+          <div class="lookup-card-info">
+            <span class="lookup-card-name" title="${escapeHtml(song.title)}">${song.title}</span>
+            <span class="lookup-card-artist" title="${escapeHtml(song.artist || "")}">${song.artist || "Unknown Artist"}</span>
+            <span class="lookup-card-cat">${song.category || ""}</span>
+          </div>
+        </div>
+        ${sheetsHtml}
+      </div>`;
+  }
+  resultsContainer.innerHTML = html;
+}
+
+function addToRecentChecked(titleEncoded, imageNameEncoded) {
+  const title = decodeURIComponent(titleEncoded);
+  const imageName = decodeURIComponent(imageNameEncoded);
+
+  // Remove existing
+  recentChecked = recentChecked.filter(x => x.title !== title);
+  // Put at start
+  recentChecked.unshift({ title, imageName });
+  // Limit to 10
+  if (recentChecked.length > 10) recentChecked.pop();
+
+  localStorage.setItem("recentChecked", JSON.stringify(recentChecked));
+  renderRecentChecked();
+}
+
+function renderRecentChecked() {
+  const container = document.getElementById("lookup-recent-checked");
+  if (!container) return;
+
+  if (recentChecked.length === 0) {
+    container.innerHTML = `<p class="lookup-hint-text">No songs viewed recently.</p>`;
+    return;
+  }
+
+  let html = "";
+  for (const item of recentChecked) {
+    const artSrc = item.imageName ? jacketUrl(item.imageName) : "";
+    const artHtml = artSrc
+      ? `<img class="lookup-recent-art" src="${artSrc}" loading="lazy">`
+      : `<div class="lookup-recent-art lookup-recent-art-empty"></div>`;
+
+    html += `
+      <div class="lookup-recent-item" onclick="document.getElementById('lookup-search').value = '${escapeHtml(item.title)}'; searchSongs('${escapeHtml(item.title)}');">
+        ${artHtml}
+        <span class="lookup-recent-name" title="${escapeHtml(item.title)}">${item.title}</span>
+      </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function triggerPlayModal(titleEncoded, diffEncoded, constant, imageNameEncoded) {
+  const title = decodeURIComponent(titleEncoded);
+  const difficulty = decodeURIComponent(diffEncoded);
+  const imageName = decodeURIComponent(imageNameEncoded);
+
+  currentManualSong = { title, difficulty, constant, imageName };
+
+  document.getElementById("manual-song-title").textContent = title;
+  
+  const diffSelect = document.getElementById("manual-diff");
+  if (diffSelect) {
+    diffSelect.innerHTML = `<option value="${difficulty}">${difficulty} (Constant: ${constant.toFixed(1)})</option>`;
+  }
+
+  // Default values
+  document.getElementById("manual-acc").value = "";
+  document.getElementById("manual-clear").value = "0";
+
+  document.getElementById("manual-score-modal").classList.remove("hidden");
+}
+
+function saveManualPlayRecord() {
+  if (!currentManualSong) return;
+
+  const accInput = document.getElementById("manual-acc");
+  const acc = parseFloat(accInput.value);
+  if (isNaN(acc) || acc < 0 || acc > 101) {
+    alert("Please enter a valid achievement rate between 0% and 101%.");
+    return;
+  }
+
+  const clearType = parseInt(document.getElementById("manual-clear").value, 10);
+  const baseRating = getRating(currentManualSong.constant, acc);
+  const apBonus = AP_CLEAR_TYPES.has(clearType) ? 1 : 0;
+  const rating = baseRating + apBonus;
+
+  // Add play record
+  const record = {
+    title: currentManualSong.title,
+    difficulty: currentManualSong.difficulty,
+    constant: currentManualSong.constant,
+    imageName: currentManualSong.imageName,
+    accuracy: acc,
+    clearType: clearType,
+    rating: rating,
+    timestamp: Date.now()
+  };
+
+  // Remove existing play of same song+diff to keep best/recent
+  recentPlayed = recentPlayed.filter(x => !(x.title === record.title && x.difficulty === record.difficulty));
+  recentPlayed.unshift(record);
+  if (recentPlayed.length > 20) recentPlayed.pop(); // keep last 20
+
+  localStorage.setItem("recentPlayed", JSON.stringify(recentPlayed));
+  renderRecentPlayed();
+
+  // Close modal
+  document.getElementById("manual-score-modal").classList.add("hidden");
+  currentManualSong = null;
+}
+
+function renderRecentPlayed() {
+  const container = document.getElementById("lookup-recent-played");
+  if (!container) return;
+
+  if (recentPlayed.length === 0) {
+    container.innerHTML = `<p class="lookup-hint-text">No recently played songs recorded yet.</p>`;
+    return;
+  }
+
+  const diffColors = { Basic: "#22c55e", Advanced: "#f59e0b", Expert: "#ef4444", Master: "#a855f7", "Re:Master": "#ec4899" };
+  let html = "";
+  for (const item of recentPlayed) {
+    const artSrc = item.imageName ? jacketUrl(item.imageName) : "";
+    const artHtml = artSrc
+      ? `<img class="lookup-recent-art" src="${artSrc}" loading="lazy">`
+      : `<div class="lookup-recent-art lookup-recent-art-empty"></div>`;
+
+    const color = diffColors[item.difficulty] || "#7c5cbf";
+    const clearStr = item.clearType ? CLEAR_LABELS[item.clearType] || "" : "";
+    const clearHtml = clearStr ? clearImg(clearStr, 14) : "";
+    const rankLabel = getRankLabel(item.accuracy);
+
+    html += `
+      <div class="lookup-recent-item played">
+        ${artHtml}
+        <div class="lookup-recent-played-info">
+          <span class="lookup-recent-name" title="${escapeHtml(item.title)}">${item.title}</span>
+          <div class="lookup-recent-played-meta">
+            <span class="l-played-diff" style="color: ${color};">${item.difficulty}</span>
+            <span class="l-played-acc">${item.accuracy.toFixed(4)}%</span>
+            <span class="l-played-rank">${rankImg(rankLabel, 14)}${clearHtml}</span>
+            <span class="l-played-rating">+${item.rating}</span>
+          </div>
+        </div>
+      </div>`;
+  }
+  container.innerHTML = html;
+}
+
 // ── Theme Setup ──────────────────────────────────────────────────────────────
+
 
 function setupTheme() {
   const toggleBtn = document.getElementById("theme-toggle");
